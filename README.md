@@ -1,7 +1,18 @@
-# Lean Type-System Development Container
+# lean_docker
 
-This Dockerfile provides a small, reproducible Lean development environment for
-formalizing a type system and proving its properties.
+`lean_docker` is intended to be imported as a subproject of a Lean project. It
+provides a small, reproducible Lean development environment for formalizing a
+type system and proving its properties.
+
+The Dockerfile is therefore located at:
+
+```text
+PROJECT_ROOT/lean_docker/Dockerfile
+```
+
+All Docker build commands must use `PROJECT_ROOT` as the build context. This is
+important because the Dockerfile reads `lean-toolchain` and copies source files
+from the consuming project, not from the `lean_docker` subdirectory.
 
 The image contains:
 
@@ -18,20 +29,39 @@ belongs in `lean-toolchain`.
 
 The Dockerfile supports both `linux/amd64` and `linux/arm64`.
 
+## Expected project layout
+
+Import or check out `lean_docker` under the project that will use it. A minimal
+layout is:
+
+```text
+PROJECT_ROOT/
+├── lean-toolchain
+└── lean_docker/
+    ├── Dockerfile
+    └── README.md
+```
+
+A normal project will also contain `lakefile.toml` or `lakefile.lean` and its
+Lean source files:
+
+```text
+PROJECT_ROOT/
+├── lean-toolchain
+├── lakefile.toml
+├── Main.lean
+├── MyProject/
+│   └── TypeSystem.lean
+└── lean_docker/
+    ├── Dockerfile
+    └── README.md
+```
+
+The exact Lean source layout is controlled by the consuming project.
+
 ## Prerequisites
 
 Install Docker Desktop or Docker Engine with BuildKit support.
-
-The build directory must contain at least:
-
-```text
-.
-├── Dockerfile
-└── lean-toolchain
-```
-
-A normal Lean project will also contain `lakefile.toml` or `lakefile.lean` and
-its Lean source files.
 
 ## Select the Lean toolchain
 
@@ -50,12 +80,19 @@ same file when choosing `lean` and `lake`.
 
 ## Build the image
 
-Run the following command from the directory containing the Dockerfile and
-`lean-toolchain`:
+Change to the consuming project's root directory and specify the nested
+Dockerfile with `--file`:
 
 ```sh
-docker build --tag lean-type-system .
+cd PROJECT_ROOT
+docker build \
+  --file lean_docker/Dockerfile \
+  --tag lean-type-system \
+  .
 ```
+
+The final `.` is significant: it makes `PROJECT_ROOT`, rather than
+`PROJECT_ROOT/lean_docker`, the build context.
 
 The first build downloads `elan` and the selected Lean toolchain. Later builds
 can reuse Docker's cached layers as long as `lean-toolchain` does not change.
@@ -178,7 +215,11 @@ On an Apple Silicon Mac, Docker automatically selects the native
 To build a specific platform explicitly:
 
 ```sh
-docker build --platform linux/arm64 --tag lean-type-system .
+docker build \
+  --platform linux/arm64 \
+  --file lean_docker/Dockerfile \
+  --tag lean-type-system \
+  .
 ```
 
 ## Multi-platform image
@@ -189,6 +230,7 @@ image name:
 ```sh
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
+  --file lean_docker/Dockerfile \
   --tag REGISTRY/OWNER/lean-type-system:TAG \
   --push \
   .
@@ -209,13 +251,16 @@ if the new archive does not match the old digest.
 
 ### `lean-toolchain` is missing
 
-The Docker build intentionally requires this file:
+The Docker build intentionally requires this file at
+`PROJECT_ROOT/lean-toolchain`:
 
 ```text
 failed to calculate checksum ... lean-toolchain: not found
 ```
 
-Create `lean-toolchain` in the Docker build context and rebuild the image.
+Create `lean-toolchain` in the consuming project's root directory. Then run the
+build from that directory with `--file lean_docker/Dockerfile` and `.` as the
+build context.
 
 ### The requested Lean toolchain cannot be downloaded
 

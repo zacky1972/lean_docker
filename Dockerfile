@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 
+# This file is expected at lean_docker/Dockerfile inside the consuming project.
+# Use the consuming project's root directory as the build context:
+#   docker build -f lean_docker/Dockerfile -t lean-type-system .
+
 ARG DEBIAN_VERSION=bookworm-slim
 
 FROM debian:${DEBIAN_VERSION} AS elan-downloader
@@ -52,6 +56,8 @@ RUN elan-init --yes --no-modify-path --default-toolchain none \
 USER lean
 WORKDIR /workspace
 
+# Paths below are resolved from the consuming project's root build context, not
+# from the lean_docker subdirectory.
 # The project, rather than the image, is the source of truth for the Lean version.
 COPY --chown=lean:lean lean-toolchain ./lean-toolchain
 
