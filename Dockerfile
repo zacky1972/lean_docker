@@ -50,7 +50,7 @@ ENV PATH=/home/lean/.elan/bin:${PATH}
 
 COPY --from=elan-downloader /out/elan-init /usr/local/bin/elan-init
 
-RUN elan-init --yes --no-modify-path --default-toolchain none \
+RUN elan-init -y --no-modify-path --default-toolchain none \
     && rm /usr/local/bin/elan-init \
     && chown --recursive lean:lean /home/lean/.elan
 
