@@ -1,1 +1,247 @@
-# lean_docker
+# Lean Type-System Development Container
+
+This Dockerfile provides a small, reproducible Lean development environment for
+formalizing a type system and proving its properties.
+
+The image contains:
+
+- Debian Bookworm Slim
+- `elan`, the Lean toolchain manager
+- the Lean toolchain selected by the project's `lean-toolchain` file
+- `lake`, supplied by the selected Lean toolchain
+- Git, for downloading Lake dependencies
+- CA certificates for secure downloads
+
+It deliberately does not embed Mathlib or select a Lean version independently
+of the project. Dependencies belong in the Lake project, and the Lean version
+belongs in `lean-toolchain`.
+
+The Dockerfile supports both `linux/amd64` and `linux/arm64`.
+
+## Prerequisites
+
+Install Docker Desktop or Docker Engine with BuildKit support.
+
+The build directory must contain at least:
+
+```text
+.
+├── Dockerfile
+└── lean-toolchain
+```
+
+A normal Lean project will also contain `lakefile.toml` or `lakefile.lean` and
+its Lean source files.
+
+## Select the Lean toolchain
+
+Create a `lean-toolchain` file containing exactly one toolchain name. Prefer an
+explicit release instead of a moving channel when reproducibility matters:
+
+```text
+leanprover/lean4:vX.Y.Z
+```
+
+Replace `vX.Y.Z` with the Lean release required by the project. If an existing
+Lean project already has this file, use it unchanged.
+
+The Docker build installs that toolchain. At run time, `elan` also reads the
+same file when choosing `lean` and `lake`.
+
+## Build the image
+
+Run the following command from the directory containing the Dockerfile and
+`lean-toolchain`:
+
+```sh
+docker build --tag lean-type-system .
+```
+
+The first build downloads `elan` and the selected Lean toolchain. Later builds
+can reuse Docker's cached layers as long as `lean-toolchain` does not change.
+
+The build verifies the downloaded `elan` archive with a pinned SHA-256 digest.
+
+## Start an interactive container
+
+To open a shell with the project version copied into the image:
+
+```sh
+docker run --rm --interactive --tty lean-type-system
+```
+
+Confirm the installed tools with:
+
+```sh
+lean --version
+lake --version
+elan show
+```
+
+## Work on files from the host
+
+During development, mount the current project directory at `/workspace`:
+
+```sh
+docker run --rm --interactive --tty \
+  --mount type=bind,source="$PWD",target=/workspace \
+  lean-type-system
+```
+
+Changes made in `/workspace` are then visible on both the host and in the
+container.
+
+On Linux, the container uses UID 1000. If the host project is not writable by
+that UID, either adjust the host permissions or run with the host user's numeric
+UID and GID:
+
+```sh
+docker run --rm --interactive --tty \
+  --user "$(id -u):$(id -g)" \
+  --env HOME=/tmp/lean-home \
+  --mount type=bind,source="$PWD",target=/workspace \
+  lean-type-system
+```
+
+The default UID normally works without additional configuration on Docker
+Desktop for macOS.
+
+## Build and check the Lean project
+
+Inside the container, use Lake normally:
+
+```sh
+lake update
+lake build
+```
+
+For a single source file that does not need a Lake project:
+
+```sh
+lean Path/To/File.lean
+```
+
+For a formalized type system, a typical project may contain definitions for
+syntax, contexts, substitution, typing judgments, operational semantics, and
+metatheoretic results such as weakening, substitution, progress, and
+preservation. These are ordinary Lean modules and do not require additional
+system packages in the container.
+
+## Add Lean libraries
+
+Declare Lean libraries in `lakefile.toml` or `lakefile.lean`; do not install
+them in the Dockerfile.
+
+After changing the dependency declarations, run:
+
+```sh
+lake update
+lake build
+```
+
+If the project uses Mathlib, download its precompiled cache before building:
+
+```sh
+lake exe cache get
+lake build
+```
+
+Mathlib is optional. A small type-system development can begin with Lean's core
+and standard libraries and add other packages only when they provide something
+the formalization actually needs.
+
+## Run one command without opening a shell
+
+Build the mounted project:
+
+```sh
+docker run --rm \
+  --mount type=bind,source="$PWD",target=/workspace \
+  lean-type-system \
+  lake build
+```
+
+Check one file:
+
+```sh
+docker run --rm \
+  --mount type=bind,source="$PWD",target=/workspace \
+  lean-type-system \
+  lean Path/To/File.lean
+```
+
+## Apple Silicon
+
+On an Apple Silicon Mac, Docker automatically selects the native
+`linux/arm64` build. No `--platform linux/amd64` option is needed.
+
+To build a specific platform explicitly:
+
+```sh
+docker build --platform linux/arm64 --tag lean-type-system .
+```
+
+## Multi-platform image
+
+To publish both supported architectures, use `buildx` with a registry-qualified
+image name:
+
+```sh
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --tag REGISTRY/OWNER/lean-type-system:TAG \
+  --push \
+  .
+```
+
+Replace `REGISTRY`, `OWNER`, and `TAG` with the intended registry coordinates.
+
+## Updating `elan`
+
+The Dockerfile pins both the `elan` version and the SHA-256 digest for each
+supported architecture. Updating `ELAN_VERSION` therefore also requires
+updating both digests from the corresponding official `elan` release assets.
+
+Do not change only the version number: the integrity check will correctly fail
+if the new archive does not match the old digest.
+
+## Troubleshooting
+
+### `lean-toolchain` is missing
+
+The Docker build intentionally requires this file:
+
+```text
+failed to calculate checksum ... lean-toolchain: not found
+```
+
+Create `lean-toolchain` in the Docker build context and rebuild the image.
+
+### The requested Lean toolchain cannot be downloaded
+
+Check the exact contents of `lean-toolchain` and confirm that the named Lean
+release exists. The file must not contain comments or additional settings.
+
+### Lake cannot download a dependency
+
+Confirm that the container has network access and that the dependency revision
+in the Lake manifest or project configuration exists. Git is already installed
+in the image.
+
+### Build results disappeared
+
+The `--rm` option removes the container after it exits. Source files and
+`.lake` build results persist only when `/workspace` is bind-mounted from the
+host or stored in another volume.
+
+## Design principles
+
+This image keeps three responsibilities separate:
+
+1. Docker supplies a small Linux execution environment.
+2. `elan` installs and selects Lean.
+3. The Lean project selects its toolchain and Lake dependencies.
+
+This avoids relying on an unmaintained third-party Lean image and prevents the
+container image from becoming a second, conflicting source of the project's
+Lean version.
