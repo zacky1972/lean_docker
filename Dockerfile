@@ -61,8 +61,13 @@ WORKDIR /workspace
 # The project, rather than the image, is the source of truth for the Lean version.
 COPY --chown=lean:lean lean-toolchain ./lean-toolchain
 
+# Change this value at build time to refresh a moving toolchain channel such as
+# stable or nightly without discarding the earlier OS and elan layers.
+ARG LEAN_TOOLCHAIN_REFRESH=0
+
 RUN toolchain="$(tr -d '\r\n' < lean-toolchain)" \
     && test -n "${toolchain}" \
+    && echo "Lean toolchain refresh token: ${LEAN_TOOLCHAIN_REFRESH}" \
     && elan toolchain install "${toolchain}" \
     && elan default "${toolchain}" \
     && lean --version \

@@ -65,8 +65,9 @@ Install Docker Desktop or Docker Engine with BuildKit support.
 
 ## Select the Lean toolchain
 
-Create a `lean-toolchain` file containing exactly one toolchain name. Prefer an
-explicit release instead of a moving channel when reproducibility matters:
+Create a `lean-toolchain` file containing exactly one toolchain name.
+
+For a reproducible project, use an explicit release:
 
 ```text
 leanprover/lean4:vX.Y.Z
@@ -77,6 +78,124 @@ Lean project already has this file, use it unchanged.
 
 The Docker build installs that toolchain. At run time, `elan` also reads the
 same file when choosing `lean` and `lake`.
+
+## Use the latest Lean release
+
+The word "latest" can mean either the latest stable release or the latest
+nightly development snapshot. For most type-system work, use the latest stable
+release unless a required Lean feature exists only in nightly.
+
+### Latest stable release
+
+Put the following single line in `PROJECT_ROOT/lean-toolchain`:
+
+```text
+stable
+```
+
+Then build from `PROJECT_ROOT`:
+
+```sh
+docker build \
+  --file lean_docker/Dockerfile \
+  --tag lean-type-system \
+  .
+```
+
+`elan` resolves `stable` to the newest stable Lean release available when the
+toolchain-installation layer is executed.
+
+### Refresh an existing image to the newest stable release
+
+Docker may reuse the previous toolchain layer when neither `lean-toolchain` nor
+the Dockerfile has changed. To force only that layer and the layers after it to
+run again, provide a new refresh token:
+
+```sh
+docker build \
+  --file lean_docker/Dockerfile \
+  --build-arg LEAN_TOOLCHAIN_REFRESH="$(date -u +%Y%m%d%H%M%S)" \
+  --tag lean-type-system \
+  .
+```
+
+The token has no semantic meaning. Its only purpose is to invalidate Docker's
+cached Lean-installation layer. Earlier Debian and `elan` download layers can
+remain cached.
+
+Alternatively, `--no-cache` also forces an update, but it rebuilds every layer
+and downloads more than necessary:
+
+```sh
+docker build \
+  --no-cache \
+  --file lean_docker/Dockerfile \
+  --tag lean-type-system \
+  .
+```
+
+Verify the version selected by the rebuilt image:
+
+```sh
+docker run --rm lean-type-system lean --version
+```
+
+### Latest nightly snapshot
+
+To follow the latest Lean development snapshot, put this in `lean-toolchain`:
+
+```text
+nightly
+```
+
+Build or refresh the image using the same command and
+`LEAN_TOOLCHAIN_REFRESH` argument shown above. Nightly may contain features not
+yet available in a stable release, but it can also introduce incompatible
+changes.
+
+### Pin the version after testing
+
+`stable` and `nightly` are moving channels. Two clean builds performed at
+different times may therefore install different Lean versions.
+
+After confirming that a particular stable release works, replace `stable` in
+`lean-toolchain` with the version reported by `lean --version`, using the
+explicit form:
+
+```text
+leanprover/lean4:vX.Y.Z
+```
+
+Commit that `lean-toolchain` file to the consuming project. This is the
+recommended mode for CI, published proofs, and any work that must remain
+reproducible.
+
+For a reproducible nightly build, use a dated nightly name instead of the
+moving `nightly` channel:
+
+```text
+nightly-YYYY-MM-DD
+```
+
+### Update Lean libraries after changing Lean
+
+Changing the Lean toolchain can require compatible revisions of Lake
+dependencies. After rebuilding the image, enter the container and run:
+
+```sh
+lake update
+lake build
+```
+
+Review and commit the resulting `lake-manifest.json` changes when the project
+uses that manifest. If the project uses Mathlib, select a Mathlib revision that
+supports the chosen Lean release and then retrieve its cache with:
+
+```sh
+lake update
+lake exe cache get
+lake build
+```
 
 ## Build the image
 
