@@ -14,7 +14,8 @@ ARG ELAN_VERSION=4.2.4
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && case "${TARGETARCH}" in \
+    && target_arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "${target_arch}" in \
          amd64) \
            elan_arch="x86_64-unknown-linux-gnu"; \
            elan_sha256="42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63" \
@@ -24,7 +25,7 @@ RUN apt-get update \
            elan_sha256="05febd124d84ebf994b2e7479922a5650b1e950c17ae3bd1ddd776b65bb72bf9" \
            ;; \
          *) \
-           echo "Unsupported architecture: ${TARGETARCH}" >&2; \
+           echo "Unsupported architecture: ${target_arch}" >&2; \
            exit 1 \
            ;; \
        esac \
